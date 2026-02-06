@@ -13,13 +13,13 @@ Local search engine for markdown notes, documentation, and knowledge bases. All 
 
 ```bash
 # Keyword search (BM25) - Fast, no vectors needed
-qmd search "query text" -n 5
+qmd search "project timeline"
 
 # Semantic search (requires embeddings)
-qmd vsearch "query text" -n 5
+qmd vsearch "how to deploy"
 
 # Hybrid search (best quality, requires embeddings)
-qmd query "query text" -n 5
+qmd query "quarterly planning process"
 ```
 
 ### Common Options
@@ -27,10 +27,14 @@ qmd query "query text" -n 5
 ```bash
 -n <num>              # Number of results (default: 5)
 -c <collection>       # Search specific collection only
+--all                 # Return all matches (use with --min-score)
 --min-score <num>     # Minimum score threshold (0.0-1.0)
 --full               # Show full document content
 --json               # JSON output
 --files              # Output: docid,score,filepath,context
+--md                 # Markdown output
+--csv                # CSV output
+--xml                # XML output
 ```
 
 ## Available Collections
@@ -58,13 +62,22 @@ qmd search "meeting notes" -c daily-logs
 
 ```bash
 # By filename
-qmd get "agents.md"
+qmd get "meetings/2024-01-15.md"
 
 # By docid (from search results)
 qmd get "#abc123"
 
 # Specific lines
 qmd get "agents.md:50" -l 20    # From line 50, show 20 lines
+
+# Get multiple documents by glob pattern
+qmd multi-get "journals/2025-05*.md"
+
+# Get multiple documents by comma-separated list
+qmd multi-get "doc1.md, doc2.md, #abc123"
+
+# Limit multi-get to files under 20KB
+qmd multi-get "docs/*.md" --max-bytes 20480
 ```
 
 ### 4. List Collection Files
@@ -83,8 +96,14 @@ qmd search "authentication" --min-score 0.5 -n 10
 # All matches above threshold
 qmd search "API" --all --min-score 0.3
 
+# Export all matches for an agent
+qmd search "API" --all --files --min-score 0.3
+
 # Full document content
 qmd search "config" --full
+
+# Search within specific collection
+qmd search "API" -c notes
 ```
 
 ### 6. Different Output Formats
@@ -99,6 +118,47 @@ qmd search "query" --files
 # Markdown format
 qmd search "query" --md
 ```
+
+## Installation
+
+### Install QMD Globally
+
+```bash
+bun install -g https://github.com/tobi/qmd
+```
+
+### Setup Workflow
+
+1. **Install QMD**
+   ```bash
+   bun install -g https://github.com/tobi/qmd
+   ```
+
+2. **Create collections for your content**
+   ```bash
+   qmd collection add ~/notes --name notes
+   qmd collection add ~/Documents/meetings --name meetings
+   qmd collection add ~/work/docs --name docs
+   ```
+
+3. **Add context to help with search results**
+   ```bash
+   qmd context add qmd://notes/ "Personal notes and ideas"
+   qmd context add qmd://meetings/ "Meeting transcripts and notes"
+   qmd context add qmd://docs/ "Work documentation"
+   ```
+
+4. **Generate embeddings for semantic search**
+   ```bash
+   qmd embed
+   ```
+
+5. **Start searching**
+   ```bash
+   qmd search "project timeline"        # Fast keyword search
+   qmd vsearch "how to deploy"          # Semantic search
+   qmd query "quarterly planning"       # Hybrid + reranking
+   ```
 
 ## Implementation Notes
 
@@ -140,7 +200,26 @@ Note: Embedding generation may take several minutes and requires:
 ### Add New Collection
 
 ```bash
+# Add collection from specific path
+qmd collection add ~/notes --name notes
+qmd collection add ~/Documents/meetings --name meetings
+qmd collection add ~/work/docs --name docs
+
+# Add with custom glob mask
 qmd collection add <path> --name <name> --mask "**/*.md"
+```
+
+### Add Context to Collections
+
+Context helps QMD understand what each collection contains:
+
+```bash
+qmd context add qmd://notes/ "Personal notes and ideas"
+qmd context add qmd://meetings/ "Meeting transcripts and notes"
+qmd context add qmd://docs/ "Work documentation"
+
+# Add context to subdirectories
+qmd context add qmd://docs/api/ "API documentation"
 ```
 
 ### Update Index
@@ -150,16 +229,28 @@ qmd update              # Re-index all collections
 qmd update --pull       # Git pull first, then re-index
 ```
 
-### Add Context
-
-```bash
-qmd context add qmd://<collection>/ "Description of this collection"
-```
-
 ### Check Status
 
 ```bash
 qmd status
+```
+
+### List Collections
+
+```bash
+qmd collection list
+```
+
+### Remove Collection
+
+```bash
+qmd collection remove <name>
+```
+
+### Rename Collection
+
+```bash
+qmd collection rename <old-name> <new-name>
 ```
 
 ## Score Interpretation
@@ -204,6 +295,15 @@ qmd search "meeting" -c daily-logs --min-score 0.3
 
 ```bash
 qmd get "agents.md" --full
+qmd get "meetings/2024-01-15.md"
+qmd get "#abc123"
+```
+
+### Get Multiple Documents
+
+```bash
+qmd multi-get "journals/2025-05*.md"
+qmd multi-get "docs/*.md" --max-bytes 20480
 ```
 
 ### Search with JSON Output
@@ -212,15 +312,34 @@ qmd get "agents.md" --full
 qmd search "API" --json -n 10
 ```
 
+### Export All Matches for Agent Processing
+
+```bash
+qmd search "API" --all --files --min-score 0.3
+```
+
+### Search Across Everything
+
+```bash
+qmd search "project timeline"
+qmd vsearch "how to deploy"
+qmd query "quarterly planning process"
+```
+
 ## Agent Usage Pattern
 
 When user asks to search their notes/docs:
 
 1. Determine search query from user's request
-2. Choose collection if specified (workspace, daily-logs, or omit for all)
-3. Run `qmd search` with appropriate options
-4. Parse and present results to user
-5. If user wants full content, use `qmd get` with docid or filename
+2. Choose search type:
+   - `qmd search` - Fast keyword search (always available)
+   - `qmd vsearch` - Semantic search (requires embeddings)
+   - `qmd query` - Hybrid search with reranking (best quality, requires embeddings)
+3. Choose collection if specified (workspace, daily-logs, or omit for all)
+4. Run search with appropriate options
+5. Parse and present results to user
+6. If user wants full content, use `qmd get` with docid or filename
+7. For multiple documents, use `qmd multi-get` with glob patterns
 
 Example:
 ```
@@ -228,4 +347,18 @@ User: "搜索关于 model provider 的内容"
 → Run: qmd search "model provider" -n 5
 → Present: Top results with titles, scores, and snippets
 → If needed: qmd get <docid> for full content
+```
+
+Example with multi-get:
+```
+User: "获取所有 2025 年 5 月的日志"
+→ Run: qmd multi-get "journals/2025-05*.md"
+→ Present: All matching documents
+```
+
+Example with export:
+```
+User: "导出所有关于 API 的文档"
+→ Run: qmd search "API" --all --files --min-score 0.3
+→ Present: File list with scores for further processing
 ```
